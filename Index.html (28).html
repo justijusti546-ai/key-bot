@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EyesBot Hub</title>
+<style>
+:root{--bg:#0f1115;--card:#1a1d24;--tx:#f2f3f5;--mu:#9aa0ab;--ac:#4f9dff;--ok:#36c275}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,sans-serif;padding:16px;max-width:480px;margin:auto}
+h1{font-size:22px}h2{font-size:16px;margin:0 0 10px}.card{background:var(--card);border-radius:14px;padding:16px;margin:14px 0}
+button,input{font-size:16px;border-radius:10px;border:1px solid #333;padding:12px;width:100%;background:#0f1115;color:var(--tx);margin:4px 0}
+button{background:var(--ac);border:0;font-weight:600;cursor:pointer}button.s{background:#2a2f3a}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:8px}.g button{background:#2a2f3a}.g button.on{background:var(--ok);color:#000}
+.row{display:flex;justify-content:space-between;align-items:center;padding:8px 0}.row input{width:auto;transform:scale(1.5)}
+small,.mu{color:var(--mu);font-size:13px}.hide{display:none}code{background:#0f1115;padding:2px 6px;border-radius:6px;word-break:break-all}
+</style></head><body>
+<h1>👀 EyesBot Hub</h1>
+
+<div id="login" class="card"><h2>Sign in</h2><button id="gbtn">Sign in with Google</button><p class="mu" id="err"></p></div>
+
+<div id="app" class="hide">
+ <div class="card"><span id="who" class="mu"></span> <button class="s" id="out" style="width:auto;padding:6px 12px">Sign out</button></div>
+
+ <div class="card"><h2>1. Connect bot to my hotspot</h2>
+  <small>On the bot: hold the touch sensor 3 sec until the screen shows "Setup mode". Then join WiFi <b>EyesBot-Setup</b> on this phone (keep it connected, turn mobile data off), come back to this tab and tap Send.</small>
+  <input id="ss" placeholder="Hotspot name" autocomplete="off">
+  <input id="pw" type="password" placeholder="Hotspot password" autocomplete="off">
+  <button id="send">Send to bot</button>
+  <small>Hotspot password is not stored anywhere. It goes straight to your bot.</small></div>
+
+ <div class="card"><h2>2. Eyes style</h2><div class="g" id="styles"></div></div>
+
+ <div class="card"><h2>3. Show notifications</h2><div id="tg"></div>
+  <small>Phone alerts come from the MacroDroid macros on your Android phone.</small></div>
+
+ <div class="card"><small>Your bot key: <code id="key"></code><br>Changes reach the bot within ~10 seconds.</small></div>
+</div>
+
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getDatabase,ref,get,set,update} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+// ====== PASTE YOUR FIREBASE CONFIG HERE ======
+const cfg= {
+  apiKey: "AIzaSyB3U9IPwFVDjiDTGX0JsAHxusdP9gYd96w",
+  authDomain: "eyesbot-hub.firebaseapp.com",
+  projectId: "eyesbot-hub",
+  storageBucket: "eyesbot-hub.firebasestorage.app",
+  messagingSenderId: "644917230784",
+  appId: "1:644917230784:web:544a55dc1c70668a344125"
+};
+// =============================================
+
+const app=initializeApp(cfg),auth=getAuth(app),db=getDatabase(app);
+const $=id=>document.getElementById(id);
+const STYLES=["👀 Normal","💖 Heart","😊 Happy","😴 Sleep","😠 Angry","😲 Surprised"];
+const APPS=[["whatsapp","WhatsApp"],["instagram","Instagram"],["facebook","Facebook"],["call","Missed calls"],["sms","SMS"]];
+let key="",uid="";
+
+$("gbtn").onclick=async()=>{try{await signInWithPopup(auth,new GoogleAuthProvider())}catch(e){$("err").textContent=e.message}};
+$("out").onclick=()=>signOut(auth);
+
+function rand(){const a=new Uint8Array(9);crypto.getRandomValues(a);return [...a].map(b=>"abcdefghijkmnpqrstuvwxyz23456789"[b%32]).join("")}
+
+onAuthStateChanged(auth,async u=>{
+  $("login").classList.toggle("hide",!!u);$("app").classList.toggle("hide",!u);
+  if(!u)return;
+  uid=u.uid;$("who").textContent=u.displayName||u.email;
+  try{
+    const k=await get(ref(db,"users/"+uid+"/botKey"));
+    key=k.exists()?k.val():rand();
+    if(!k.exists())await set(ref(db,"users/"+uid+"/botKey"),key);
+    const b=await get(ref(db,"bots/"+key));
+    let d=b.val();
+    if(!d){d={owner:uid,style:1,notify:{whatsapp:true,instagram:true,facebook:true,call:true,sms:true}};await set(ref(db,"bots/"+key),d)}
+    $("key").textContent=key;render(d);
+  }catch(e){alert("Database error: "+e.message)}
+});
+
+function render(d){
+  $("styles").innerHTML="";
+  STYLES.forEach((n,i)=>{const b=document.createElement("button");b.textContent=n;if(d.style===i)b.className="on";
+    b.onclick=async()=>{await update(ref(db,"bots/"+key),{style:i});d.style=i;render(d)};$("styles").appendChild(b)});
+  $("tg").innerHTML="";
+  APPS.forEach(([k,n])=>{const r=document.createElement("label");r.className="row";
+    const on=!d.notify||d.notify[k]!==false;
+    r.innerHTML=`<span>${n}</span><input type="checkbox" ${on?"checked":""}>`;
+    r.querySelector("input").onchange=e=>update(ref(db,"bots/"+key+"/notify"),{[k]:e.target.checked});
+    $("tg").appendChild(r)});
+}
+
+$("send").onclick=()=>{
+  const s=$("ss").value.trim(),p=$("pw").value;
+  if(!s){alert("Enter hotspot name");return}
+  location.href="http://192.168.4.1/save?s="+encodeURIComponent(s)+"&p="+encodeURIComponent(p)+"&k="+key;
+};
+</script></body></html>
